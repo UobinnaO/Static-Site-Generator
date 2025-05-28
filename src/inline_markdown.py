@@ -2,89 +2,139 @@ from textnode import TextNode, TextType
 import re
 
 def split_nodes_delimiter(old_nodes, delimiter, text_type):
-    rtn_lst_nodes = list(filter(lambda x: x.text_type != TextType.TEXT, old_nodes))
-    only_texttype_node = list(filter(lambda x: x.text_type == TextType.TEXT, old_nodes))
-    node_text_lst = list(map(lambda x: x.text, only_texttype_node))
-
-    word_start_end_locations = []
-
-    def locate_delimiter(str, delimiter, str_not_checked):
-        single_delimiter_location = str.find(delimiter)
-        word_locations_lst_len = len(word_start_end_locations)
-        if delimiter not in str:
-            return
-        single_word_location = 0
-        if word_locations_lst_len % 2 == 0:
-            single_word_location = (
-                str.find(delimiter) + len(str_not_checked) + len(delimiter)
-            )
-        if word_locations_lst_len % 2 != 0:
-            single_word_location = (
-                str.find(delimiter)
-                + len(delimiter)
-                + len(str_not_checked)
-                - len(delimiter)
-            )
-        str_not_checked = (
-            str_not_checked + str[: single_delimiter_location + len(delimiter)]
-        )
-        word_start_end_locations.append(single_word_location)
-        return locate_delimiter(
-            str[single_delimiter_location + len(delimiter) :],
-            delimiter,
-            str_not_checked,
-        )
-
-    for text in node_text_lst:
-        locate_delimiter(text, delimiter, "")
-        location_pairs = list(
-            zip(word_start_end_locations[::2], word_start_end_locations[1::2])
-        )
-        emphasized_phrases = []
-        for pair in location_pairs:
-            emphasized_phrases.append(text[pair[0] : pair[1]])
-        print(f"{emphasized_phrases}\n")
-
-        text_split = text.split(delimiter)
-        if "" in text_split:
-            text_split.remove("")
-
-        for text in text_split:
-            if text in emphasized_phrases:
-                rtn_lst_nodes.append(TextNode(text, text_type))
+    new_nodes = []
+    for old_node in old_nodes:
+        if old_node.text_type != TextType.TEXT:
+            new_nodes.append(old_node)
+            continue
+        split_nodes = []
+        sections = old_node.text.split(delimiter)
+        if len(sections) % 2 == 0:
+            raise ValueError("invalid markdown, formatted section not closed")
+        for i in range(len(sections)):
+            if sections[i] == "":
+                continue
+            if i % 2 == 0:
+                split_nodes.append(TextNode(sections[i], TextType.TEXT))
             else:
-                text_type2 = TextType.TEXT
-                rtn_lst_nodes.append(TextNode(text, text_type2))
-    return rtn_lst_nodes
+                split_nodes.append(TextNode(sections[i], text_type))
+        new_nodes.extend(split_nodes)
+    return new_nodes
+
+
+def split_nodes_image(old_nodes):
+    new_nodes = []
+    for old_node in old_nodes:
+        if old_node.text_type != TextType.TEXT:
+            new_nodes.append(old_node)
+            continue
+        original_text = old_node.text
+        images = extract_markdown_images(original_text)
+        if len(images) == 0:
+            new_nodes.append(old_node)
+            continue
+        for image in images:
+            sections = original_text.split(f"![{image[0]}]({image[1]})", 1)
+            if len(sections) != 2:
+                raise ValueError("invalid markdown, image section not closed")
+            if sections[0] != "":
+                new_nodes.append(TextNode(sections[0], TextType.TEXT))
+            new_nodes.append(
+                TextNode(
+                    image[0],
+                    TextType.IMAGE,
+                    image[1],
+                )
+            )
+            original_text = sections[1]
+        if original_text != "":
+            new_nodes.append(TextNode(original_text, TextType.TEXT))
+    return new_nodes
+
+
+def split_nodes_link(old_nodes):
+    new_nodes = []
+    for old_node in old_nodes:
+        if old_node.text_type != TextType.TEXT:
+            new_nodes.append(old_node)
+            continue
+        original_text = old_node.text
+        links = extract_markdown_links(original_text)
+        if len(links) == 0:
+            new_nodes.append(old_node)
+            continue
+        for link in links:
+            sections = original_text.split(f"[{link[0]}]({link[1]})", 1)
+            if len(sections) != 2:
+                raise ValueError("invalid markdown, link section not closed")
+            if sections[0] != "":
+                new_nodes.append(TextNode(sections[0], TextType.TEXT))
+            new_nodes.append(TextNode(link[0], TextType.LINK, link[1]))
+            original_text = sections[1]
+        if original_text != "":
+            new_nodes.append(TextNode(original_text, TextType.TEXT))
+    return new_nodes
+
 
 def extract_markdown_images(text):
-    """takes raw markdown text and returns a list of tuples.
-    Each tuple should contain the alt text and the URL of any markdown
-    images
+    pattern = r"!\[([^\[\]]*)\]\(([^\(\)]*)\)"
+    matches = re.findall(pattern, text)
+    return matches
 
-
-    Args:
-        text (_type_): long text
-
-    Returns:
-        _type_: list of tuple(alt text, img url)
-    """
-
-    alt_text = re.findall(r"\[(.*?)\]", text)
-    img_url = re.findall(r"\((.*?)\)", text)
-    return list(zip(alt_text, img_url))
 
 def extract_markdown_links(text):
-    """takes raw markdown text and returns a list of tuples.
-    Each tuple should contain the anchor text and the URL of any markdown
-    images
+    pattern = r"(?<!!)\[([^\[\]]*)\]\(([^\(\)]*)\)"
+    matches = re.findall(pattern, text)
+    return matches
 
-    Args:
-        text (_type_): long text
 
-    Returns:
-        _type_: list of tuple(anchor text, link url)
-    """
-    anchor_text = re.findall(r"\[(.*?)\]", text)
-    link_url = re.findall(r"\((.*?)\)", text)
-    return list(zip(anchor_text, link_url))
+def text_to_textnodes(text):
+    nodes = [TextNode(text, TextType.TEXT)]
+    nodes = split_nodes_delimiter(nodes, "**", TextType.BOLD)
+    nodes = split_nodes_delimiter(nodes, "_", TextType.ITALIC)
+    nodes = split_nodes_delimiter(nodes, "`", TextType.CODE)
+    nodes = split_nodes_image(nodes)
+    nodes = split_nodes_link(nodes)
+    return nodes
+
+
+def markdown_to_blocks(markdown):
+    blocks = []
+    markdown_split = markdown.split("\n\n")
+
+    # print(f"split by newline:\n {markdown_split}\n")
+    # for v in markdown_split:
+    #     print(f'{v}')
+    #     x = v.split("\n\n")
+    #     print(f'x len: {len(x)}')
+    #     print(f'{x}\n')
+
+    for item in markdown_split:
+        # blocks.append(item)
+        # blocks.append(item.strip().strip("\t"))
+        # print(f'item: {item}')
+        # print(f'item: {item.strip()}\n')
+        head_tail_space_remove = item.strip()
+        # print(f'{head_tail_space_remove}\n')
+        blocks.append(head_tail_space_remove)
+
+        # if "\n" not in head_tail_space_remove:
+        #     blocks.append(head_tail_space_remove)
+        #     continue
+
+        # if "\n" in head_tail_space_remove:
+        #     # print(f'{head_tail_space_remove}\n')
+        #     head_tail_space_remove.replace("\n")            
+
+        # inner_split = head_tail_space_remove.split("\n")
+        # # print(f'{inner_split}')
+        
+        # for split in inner_split:
+        #     blocks.append(split)
+
+
+        # block_split = head_tail_space_remove.split("\n")
+        # print(f'{block_split}')
+
+    # print(f'blocks:\n{blocks}')
+    return blocks
