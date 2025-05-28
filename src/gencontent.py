@@ -3,7 +3,7 @@ from markdown_blocks import markdown_to_html_node
 from pathlib import Path
 import posixpath
 
-def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, base_path):
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, basepath):
     if not os.path.exists(dest_dir_path):
         os.mkdir(dest_dir_path)
 
@@ -19,13 +19,13 @@ def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, bas
             from_path,
             template_path,
             os.path.join(dest_dir_path, needed_dir, "index.html"),
-            base_path   
+            basepath   
            )
         else:
-            generate_pages_recursive(from_path, template_path, dest_dir_path, base_path)
+            generate_pages_recursive(from_path, template_path, dest_dir_path, basepath)
 
 
-def generate_page(from_path, template_path, dest_path, base_path):
+def generate_page(from_path, template_path, dest_path, basepath):
     print(f" * {from_path} {template_path} -> {dest_path}")
     from_file = open(from_path, "r")
     markdown_content = from_file.read()
@@ -41,10 +41,8 @@ def generate_page(from_path, template_path, dest_path, base_path):
     title = extract_title(markdown_content)
     template = template.replace("{{ Title }}", title)
     template = template.replace("{{ Content }}", html)
-    # print(f'BEFORE REPLACE\n{template}')
-    template = template.replace('href="/',f'href="{base_path}')
-    template = template.replace('src="/',f'src="{base_path}')
-    # print(f'AFTER REPLACE\n{template}')
+    template = template.replace('href="/', 'href="' + basepath)
+    template = template.replace('src="/', 'src="' + basepath)
 
     dest_dir_path = os.path.dirname(dest_path)
     if dest_dir_path != "":
